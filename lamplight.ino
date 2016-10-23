@@ -7,6 +7,7 @@
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
 #define TEST_TIMING
+// #define DO_SERIAL_LOGGING
 
 #ifndef TEST_TIMING
 const uint32_t WAKE_UP_TIME_SECONDS = 23400; // 6:30 am
@@ -157,12 +158,10 @@ void test_lighting() {
 ///////////////////////
 
 void setup () {
-    // Clear the watchdog
-    // MCUSR &= ~_BV(WDRF);
-    // wdt_disable();
-    // wdt_reset();
-
+#ifdef DO_SERIAL_LOGGING
     Serial.begin(57600);
+#endif
+    
     Wire.begin();
     RTC.begin();
 
@@ -177,11 +176,6 @@ void setup () {
     TCCR1A = 0x00;
     TCCR1B = 0x02;
     TIMSK1 = (1<<TOIE1); // use the overflow interrupt only
-
-    // Serial.println("Reset; enable watchdog");
-    
-    // wdt_reset();
-    // wdt_enable(WDTO_1S);
 }
 
 static bool squelched = true;
@@ -206,16 +200,21 @@ void setLightBrightness(uint32_t value, uint32_t scale) {
     
     uint8_t analogValue = MIN(lroundf(float(rescaledValue) * rescaledValue / 256), 255);
 
+#ifdef DO_SERIAL_LOGGING
     Serial.print("Set brightness: ");
     Serial.println(analogValue, DEC);
+#endif
+    
     analogWrite(11, analogValue);
 }
 
 void updateBrightness() {
     DateTime now = toLocalTime(RTC.now());
+#ifdef DO_SERIAL_LOGGING
     print_date(now);
     Serial.println();
-
+#endif
+    
     uint32_t timeOfDay = secondsSinceMidnight(now);
 
     if (userLightOn) {
@@ -295,8 +294,6 @@ void loop () {
         }
 
         if (timerFired) {
-            //wdt_reset();
-
             if (ledTestCounter == 0) {
                 updateBrightness();
             }
