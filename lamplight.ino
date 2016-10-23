@@ -160,7 +160,7 @@ void setup () {
     RTC.begin();
 
 #ifdef TEST_TIMING
-    WAKE_UP_TIME_SECONDS = secondsSinceMidnight(RTC.now()) + 5;
+    WAKE_UP_TIME_SECONDS = secondsSinceMidnight(toLocalTime(RTC.now())) + 5;
 #endif
     
 }
@@ -183,7 +183,7 @@ void setLightBrightness(uint32_t value, uint32_t scale) {
 volatile static bool squelched = false;
 
 void updateBrightness() {
-    DateTime now = RTC.now();
+    DateTime now = toLocalTime(RTC.now());
     print_date(now);
     Serial.println();
 
