@@ -7,10 +7,13 @@
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
 #define TEST_TIMING
-// #define DO_SERIAL_LOGGING
+#define DO_SERIAL_LOGGING
 
 #ifndef TEST_TIMING
-const uint32_t WAKE_UP_TIME_SECONDS = 23400; // 6:30 am
+// const uint32_t WAKE_UP_TIME_SECONDS = 23400; // 6:30 am
+// const uint32_t FADE_DURATION_SECONDS = 1800; // half an hour
+// const uint32_t STAY_ON_DURATION_SECONDS = 7200; // two hours
+const uint32_t WAKE_UP_TIME_SECONDS = 73980;
 const uint32_t FADE_DURATION_SECONDS = 1800; // half an hour
 const uint32_t STAY_ON_DURATION_SECONDS = 7200; // two hours
 #else
@@ -22,7 +25,7 @@ const uint32_t STAY_ON_DURATION_SECONDS = 15;
 RTC_DS1307 RTC;
 
 void set_time() {
-    DateTime today(2016, 3, 25, 19, 6, 30);
+    DateTime today(2016, 10, 23, 23, 31, 0);
     RTC.adjust(today);
 }
 
@@ -165,13 +168,13 @@ void setup () {
     Wire.begin();
     RTC.begin();
 
-    
 #ifdef TEST_TIMING
     WAKE_UP_TIME_SECONDS = secondsSinceMidnight(toLocalTime(RTC.now())) + 5;
 #endif
     
-    pinMode(2, INPUT_PULLUP);
+    pinMode(2, INPUT_PULLUP); // button
     attachInterrupt(digitalPinToInterrupt(2), button, FALLING);
+    pinMode(3, INPUT_PULLUP); // enable/disable toggle (forces squelch when low)
 
     TCCR1A = 0x00;
     TCCR1B = 0x02;
@@ -210,13 +213,17 @@ void setLightBrightness(uint32_t value, uint32_t scale) {
 
 void updateBrightness() {
     DateTime now = toLocalTime(RTC.now());
+    uint32_t timeOfDay = secondsSinceMidnight(now);
+    
 #ifdef DO_SERIAL_LOGGING
+    Serial.print("Current date in local time: ");
     print_date(now);
+    Serial.println();
+    Serial.print("Time in seconds since midnight: ");
+    Serial.print(timeOfDay, DEC);
     Serial.println();
 #endif
     
-    uint32_t timeOfDay = secondsSinceMidnight(now);
-
     if (userLightOn) {
         setLightBrightness(1, 1);
         return;
@@ -225,6 +232,10 @@ void updateBrightness() {
     
     if (timeOfDay == WAKE_UP_TIME_SECONDS) {
         squelched = false;
+    }
+
+    if (digitalRead(3) == 0) {
+        squelched = true;
     }
 
     
