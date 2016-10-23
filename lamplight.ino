@@ -1,6 +1,8 @@
 #include <Wire.h>
 #include <stdint.h>
 #include "RTClib.h"
+#include <avr/sleep.h>
+#include <avr/wdt.h>
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
@@ -155,15 +157,43 @@ void test_lighting() {
 ///////////////////////
 
 void setup () {
+    // Clear the watchdog
+    // MCUSR &= ~_BV(WDRF);
+    // wdt_disable();
+    // wdt_reset();
+
     Serial.begin(57600);
     Wire.begin();
     RTC.begin();
 
+    
 #ifdef TEST_TIMING
     WAKE_UP_TIME_SECONDS = secondsSinceMidnight(toLocalTime(RTC.now())) + 5;
 #endif
     
+    pinMode(2, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(2), button, FALLING);
+
+    TCCR1A = 0x00;
+    TCCR1B = 0x02;
+    TIMSK1 = (1<<TOIE1); // use the overflow interrupt only
+
+    // Serial.println("Reset; enable watchdog");
+    
+    // wdt_reset();
+    // wdt_enable(WDTO_1S);
 }
+
+static bool squelched = true;
+
+static volatile bool _buttonPressed = false;
+static volatile bool _timerFired = false;
+
+// NOTE: this is an ISR
+void button() {
+    _buttonPressed = true;
+}
+
 
 void setLightBrightness(uint32_t value, uint32_t scale) {
     // scale the value to 0..256 first
@@ -179,8 +209,6 @@ void setLightBrightness(uint32_t value, uint32_t scale) {
     Serial.println(analogValue, DEC);
     analogWrite(11, analogValue);
 }
-
-volatile static bool squelched = false;
 
 void updateBrightness() {
     DateTime now = toLocalTime(RTC.now());
@@ -210,15 +238,81 @@ void updateBrightness() {
                timeOfDay < STAY_ON_TIME_SECONDS) {
 
         setLightBrightness(1, 1);
+
+    } else if (timeOfDay == STAY_ON_TIME_SECONDS) {
         
-    } else {
         squelched = true;
         setLightBrightness(0, 1);
+        
+    } else {
+
+        // not squelched, turn on (by user request)
+        setLightBrightness(1, 1);
+        
     }
     
 }
 
+static bool anything_fired(void) {
+    return _timerFired || _buttonPressed;
+}
+
 void loop () {
-    updateBrightness();
-    delay(500);
+    static uint8_t ledTestCounter = 0;
+    static uint8_t buttonPressCounter = 0;
+    
+    for(;;) {
+        // Watch for interrupts, and sleep if nothing has fired.
+        cli();
+        while(!anything_fired()) {
+            set_sleep_mode(SLEEP_MODE_IDLE);
+            sleep_enable();
+            // It's safe to enable interrupts (sei) immediately before
+            // sleeping.  Interrupts can't fire until after the
+            // following instruction has executed, so there's no race
+            // condition between re-enabling interrupts and sleeping.
+            sei();
+            sleep_cpu();
+            sleep_disable();
+            cli();
+        }
+
+        bool timerFired = _timerFired;
+        bool buttonPressed = _buttonPressed;
+        _timerFired = false;
+        _buttonPressed = false;
+        
+        sei();
+
+        
+        if (buttonPressed) {
+            buttonPressCounter = 1;
+        }
+
+        if (timerFired) {
+            //wdt_reset();
+
+            if (ledTestCounter == 0) {
+                updateBrightness();
+            }
+            ledTestCounter = (ledTestCounter + 1) % 16;
+
+            if (buttonPressCounter != 0) {
+                // debounce
+                buttonPressCounter = (buttonPressCounter + 1) % 3;
+                if (buttonPressCounter == 0) {
+                    uint8_t buttonState = digitalRead(2);
+
+                    if (buttonState == 0) {
+                        squelched = !squelched;
+                        updateBrightness();
+                    }
+                }
+            }
+        }
+    }
+}
+
+ISR(TIMER1_OVF_vect) {
+    _timerFired = true;
 }
