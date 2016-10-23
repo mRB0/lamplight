@@ -4,6 +4,18 @@
 
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
+#define TEST_TIMING
+
+#ifndef TEST_TIMING
+const uint32_t WAKE_UP_TIME_SECONDS = 23400; // 6:30 am
+const uint32_t FADE_DURATION_SECONDS = 1800; // half an hour
+const uint32_t STAY_ON_DURATION_SECONDS = 7200; // two hours
+#else
+uint32_t WAKE_UP_TIME_SECONDS = 0;
+const uint32_t FADE_DURATION_SECONDS = 30;
+const uint32_t STAY_ON_DURATION_SECONDS = 15;
+#endif
+
 RTC_DS1307 RTC;
 
 void set_time() {
@@ -54,6 +66,10 @@ DateTime toLocalTime(const DateTime &dt_utc) {
     } else {
         return DateTime(dt_utc.unixtime() - (4 * 60 * 60));
     }
+}
+
+uint32_t secondsSinceMidnight(const DateTime &probablyShouldPassLocalTime) {
+    return ((uint32_t)(probablyShouldPassLocalTime.hour()) * 60 + probablyShouldPassLocalTime.minute()) * 60 + probablyShouldPassLocalTime.second();
 }
 
 /////////////////////////////
@@ -142,30 +158,67 @@ void setup () {
     Serial.begin(57600);
     Wire.begin();
     RTC.begin();
+
+#ifdef TEST_TIMING
+    WAKE_UP_TIME_SECONDS = secondsSinceMidnight(RTC.now()) + 5;
+#endif
+    
+}
+
+void setLightBrightness(uint32_t value, uint32_t scale) {
+    // scale the value to 0..256 first
+    
+    uint32_t rescaledValue = (uint32_t)value * 256 / scale;
+    
+    // square it to compensate for light's actual brightness curve
+    // TODO: is square the right function?
+    
+    uint8_t analogValue = MIN(lroundf(float(rescaledValue) * rescaledValue / 256), 255);
+
+    Serial.print("Set brightness: ");
+    Serial.println(analogValue, DEC);
+    analogWrite(11, analogValue);
+}
+
+volatile static bool squelched = false;
+
+void updateBrightness() {
+    DateTime now = RTC.now();
+    print_date(now);
+    Serial.println();
+
+    uint32_t timeOfDay = secondsSinceMidnight(now);
+
+    if (timeOfDay == WAKE_UP_TIME_SECONDS) {
+        squelched = false;
+    }
+
+    if (squelched) {
+        setLightBrightness(0, 1);
+        return;
+    }
+
+    const uint32_t FADE_TIME_SECONDS = WAKE_UP_TIME_SECONDS + FADE_DURATION_SECONDS;
+    const uint32_t STAY_ON_TIME_SECONDS = WAKE_UP_TIME_SECONDS + FADE_DURATION_SECONDS + STAY_ON_DURATION_SECONDS;
+    
+    if (timeOfDay >= WAKE_UP_TIME_SECONDS &&
+        timeOfDay < FADE_TIME_SECONDS) {
+        
+        setLightBrightness(timeOfDay - WAKE_UP_TIME_SECONDS, FADE_DURATION_SECONDS);
+        
+    } else if (timeOfDay >= FADE_TIME_SECONDS &&
+               timeOfDay < STAY_ON_TIME_SECONDS) {
+
+        setLightBrightness(1, 1);
+        
+    } else {
+        squelched = true;
+        setLightBrightness(0, 1);
+    }
     
 }
 
 void loop () {
-  
-    DateTime now = RTC.now();
-
-    print_date(now);
-    Serial.println();
-
-    Serial.print(" since 1970 = ");
-    Serial.print(now.unixtime());
-    Serial.print("s = ");
-    Serial.print(now.unixtime() / 86400L);
-    Serial.println("d");
-
-    // calculate a date which is 7 days and 30 seconds into the future
-    DateTime future (now.unixtime() + 7 * 86400L + 30);
-
-    Serial.print(" now + 7d + 30s: ");
-    print_date(future);
-    Serial.println();
-  
-
-    Serial.println();
-    delay(3000);
+    updateBrightness();
+    delay(500);
 }
