@@ -185,6 +185,7 @@ void setup () {
 }
 
 static bool squelched = true;
+static bool userLightOn = false;
 
 static volatile bool _buttonPressed = false;
 static volatile bool _timerFired = false;
@@ -217,38 +218,42 @@ void updateBrightness() {
 
     uint32_t timeOfDay = secondsSinceMidnight(now);
 
+    if (userLightOn) {
+        setLightBrightness(1, 1);
+        return;
+    }
+
+    
     if (timeOfDay == WAKE_UP_TIME_SECONDS) {
         squelched = false;
     }
 
-    if (squelched) {
-        setLightBrightness(0, 1);
-        return;
-    }
-
-    const uint32_t FADE_TIME_SECONDS = WAKE_UP_TIME_SECONDS + FADE_DURATION_SECONDS;
-    const uint32_t STAY_ON_TIME_SECONDS = WAKE_UP_TIME_SECONDS + FADE_DURATION_SECONDS + STAY_ON_DURATION_SECONDS;
     
-    if (timeOfDay >= WAKE_UP_TIME_SECONDS &&
-        timeOfDay < FADE_TIME_SECONDS) {
+    if (squelched) {
         
-        setLightBrightness(timeOfDay - WAKE_UP_TIME_SECONDS, FADE_DURATION_SECONDS);
-        
-    } else if (timeOfDay >= FADE_TIME_SECONDS &&
-               timeOfDay < STAY_ON_TIME_SECONDS) {
-
-        setLightBrightness(1, 1);
-
-    } else if (timeOfDay == STAY_ON_TIME_SECONDS) {
-        
-        squelched = true;
         setLightBrightness(0, 1);
         
     } else {
-
-        // not squelched, turn on (by user request)
-        setLightBrightness(1, 1);
         
+        const uint32_t FADE_TIME_SECONDS = WAKE_UP_TIME_SECONDS + FADE_DURATION_SECONDS;
+        const uint32_t STAY_ON_TIME_SECONDS = WAKE_UP_TIME_SECONDS + FADE_DURATION_SECONDS + STAY_ON_DURATION_SECONDS;
+
+        if (timeOfDay >= WAKE_UP_TIME_SECONDS &&
+            timeOfDay < FADE_TIME_SECONDS) {
+        
+            setLightBrightness(timeOfDay - WAKE_UP_TIME_SECONDS, FADE_DURATION_SECONDS);
+        
+        } else if (timeOfDay >= FADE_TIME_SECONDS &&
+                   timeOfDay < STAY_ON_TIME_SECONDS) {
+
+            setLightBrightness(1, 1);
+
+        } else if (timeOfDay == STAY_ON_TIME_SECONDS) {
+        
+            squelched = true;
+            setLightBrightness(0, 1);
+        
+        }
     }
     
 }
@@ -304,7 +309,11 @@ void loop () {
                     uint8_t buttonState = digitalRead(2);
 
                     if (buttonState == 0) {
-                        squelched = !squelched;
+                        if (!squelched) {
+                            squelched = true;
+                        } else {
+                            userLightOn = !userLightOn;
+                        }
                         updateBrightness();
                     }
                 }
