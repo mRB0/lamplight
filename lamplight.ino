@@ -7,7 +7,7 @@
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
 #define TEST_TIMING
-#define DO_SERIAL_LOGGING
+// #define DO_SERIAL_LOGGING
 
 #ifndef TEST_TIMING
 // const uint32_t WAKE_UP_TIME_SECONDS = 23400; // 6:30 am
@@ -160,6 +160,40 @@ void test_lighting() {
 
 ///////////////////////
 
+// GND to activate
+const uint8_t disp_digit0 = A1;
+const uint8_t disp_digit1 = A0;
+const uint8_t disp_digit2 = A2;
+const uint8_t disp_digit3 = A3;
+
+const uint8_t disp_digits[] = { disp_digit0, disp_digit1, disp_digit2, disp_digit3, };
+
+// 5V to activate
+const uint8_t disp_top = 2;
+const uint8_t disp_upperleft = 3;
+const uint8_t disp_upperright = 4;
+const uint8_t disp_middle = 6;
+const uint8_t disp_lowerright = 7;
+const uint8_t disp_dot = 8;
+const uint8_t disp_bottom = 9;
+const uint8_t disp_lowerleft = 10;
+
+const uint8_t disp_segs[] = { disp_top, disp_upperleft, disp_upperright, disp_middle, disp_lowerright, disp_dot, disp_bottom, disp_lowerleft };
+
+// mask: use table above, top (msb) to lowerleft (lsb)
+const uint8_t segs_0 = 0b11101011;
+const uint8_t segs_1 = 0b00101000;
+const uint8_t segs_2 = 0b10110011;
+const uint8_t segs_3 = 0b10111010;
+const uint8_t segs_4 = 0b01111000;
+const uint8_t segs_5 = 0b11011010;
+const uint8_t segs_6 = 0b11011011;
+const uint8_t segs_7 = 0b10101000;
+const uint8_t segs_8 = 0b11111011;
+const uint8_t segs_9 = 0b11111010;
+
+const uint8_t segs[] = { segs_0, segs_1, segs_2, segs_3, segs_4, segs_5, segs_6, segs_7, segs_8, segs_9 };
+
 void setup () {
 #ifdef DO_SERIAL_LOGGING
     Serial.begin(57600);
@@ -173,25 +207,45 @@ void setup () {
 #endif
     
     pinMode(2, INPUT_PULLUP); // button
-    attachInterrupt(digitalPinToInterrupt(2), button, FALLING);
     pinMode(3, INPUT_PULLUP); // enable/disable toggle (forces squelch when low)
 
-    TCCR1A = 0x00;
-    TCCR1B = 0x02;
+    TCCR1A = 0x01;
+    TCCR1B = 0x03;
     TIMSK1 = (1<<TOIE1); // use the overflow interrupt only
+
+    // LED clock display
+    digitalWrite(disp_top, LOW);
+    pinMode(disp_top, OUTPUT);
+    digitalWrite(disp_upperleft, LOW);
+    pinMode(disp_upperleft, OUTPUT);
+    digitalWrite(disp_upperright, LOW);
+    pinMode(disp_upperright, OUTPUT);
+    digitalWrite(disp_middle, LOW);
+    pinMode(disp_middle, OUTPUT);
+    digitalWrite(disp_lowerright, LOW);
+    pinMode(disp_lowerright, OUTPUT);
+    digitalWrite(disp_dot, LOW);
+    pinMode(disp_dot, OUTPUT);
+    digitalWrite(disp_bottom, LOW);
+    pinMode(disp_bottom, OUTPUT);
+    digitalWrite(disp_lowerleft, LOW);
+    pinMode(disp_lowerleft, OUTPUT);
+    
+    digitalWrite(disp_digit0, LOW);
+    pinMode(disp_digit0, OUTPUT);
+    digitalWrite(disp_digit1, LOW);
+    pinMode(disp_digit1, OUTPUT);
+    digitalWrite(disp_digit2, LOW);
+    pinMode(disp_digit2, OUTPUT);
+    digitalWrite(disp_digit3, LOW);
+    pinMode(disp_digit3, OUTPUT);
 }
 
 static bool squelched = true;
 static bool userLightOn = false;
 
-static volatile bool _buttonPressed = false;
 static volatile bool _timerFired = false;
-
-// NOTE: this is an ISR
-void button() {
-    _buttonPressed = true;
-}
-
+static volatile uint8_t _clock_digits[] = { 0x80, 0x80, 0x80, 0x80 };
 
 void setLightBrightness(uint32_t value, uint32_t scale) {
     // scale the value to 0..256 first
@@ -211,8 +265,16 @@ void setLightBrightness(uint32_t value, uint32_t scale) {
     analogWrite(11, analogValue);
 }
 
+void updateClockDisplay(DateTime &when) {
+    _clock_digits[0] = when.hour() / 10;
+    _clock_digits[1] = (when.hour() % 10) | 0x80;
+    _clock_digits[2] = when.minute() / 10;
+    _clock_digits[3] = when.minute() % 10;
+};
+
 void updateBrightness() {
     DateTime now = toLocalTime(RTC.now());
+    updateClockDisplay(now);
     uint32_t timeOfDay = secondsSinceMidnight(now);
     
 #ifdef DO_SERIAL_LOGGING
@@ -269,12 +331,11 @@ void updateBrightness() {
 }
 
 static bool anything_fired(void) {
-    return _timerFired || _buttonPressed;
+    return _timerFired;
 }
 
 void loop () {
-    static uint8_t ledTestCounter = 0;
-    static uint8_t buttonPressCounter = 0;
+    static uint8_t actionCounter = 0;
     
     for(;;) {
         // Watch for interrupts, and sleep if nothing has fired.
@@ -293,43 +354,80 @@ void loop () {
         }
 
         bool timerFired = _timerFired;
-        bool buttonPressed = _buttonPressed;
         _timerFired = false;
-        _buttonPressed = false;
         
         sei();
 
         
-        if (buttonPressed) {
-            buttonPressCounter = 1;
-        }
-
         if (timerFired) {
-            if (ledTestCounter == 0) {
+            if (actionCounter == 0) {
                 updateBrightness();
+                
             }
-            ledTestCounter = (ledTestCounter + 1) % 16;
+            actionCounter = (actionCounter + 1) % 16;
+            
+            // if (buttonPressCounter != 0) {
+            //     // debounce
+            //     buttonPressCounter = (buttonPressCounter + 1) % 3;
+            //     if (buttonPressCounter == 0) {
+            //         uint8_t buttonState = digitalRead(2);
 
-            if (buttonPressCounter != 0) {
-                // debounce
-                buttonPressCounter = (buttonPressCounter + 1) % 3;
-                if (buttonPressCounter == 0) {
-                    uint8_t buttonState = digitalRead(2);
-
-                    if (buttonState == 0) {
-                        if (!squelched) {
-                            squelched = true;
-                        } else {
-                            userLightOn = !userLightOn;
-                        }
-                        updateBrightness();
-                    }
-                }
-            }
+            //         if (buttonState == 0) {
+            //             if (!squelched) {
+            //                 squelched = true;
+            //             } else {
+            //                 userLightOn = !userLightOn;
+            //             }
+            //             updateBrightness();
+            //         }
+            //     }
+            // }
         }
     }
 }
 
+// fire only every n interrupts, not on every single interrupt
+uint8_t const _timer1_fire_counter_max = 12;
+uint8_t _timer1_fire_counter = 0;
+
+// digits is a 4-array of digits (0 .. 9), msb set => dot on
+void writeDigits(volatile uint8_t *digits) {
+    uint8_t masks[4] = { 0, 0, 0, 0 };
+    
+    for(uint8_t i = 0; i < 4; i++) {
+        uint8_t dotmask = (digits[i] & 0x80) ? 0b100 : 0;
+        
+        masks[i] = segs[digits[i] & 0x0f] | dotmask;
+    }
+
+    for(uint8_t seg = 0; seg < 8; seg++) {
+
+        digitalWrite(disp_segs[seg], LOW);
+        
+        for(uint8_t digit = 0; digit < 4; digit++) {
+            if (masks[digit] & (1 << (7 - seg))) {                
+                digitalWrite(disp_digits[digit], HIGH);
+            } else {
+                digitalWrite(disp_digits[digit], LOW);
+            }
+        }
+        
+        //delay(1);
+
+        for(uint8_t digit = 0; digit < 4; digit++) {
+            digitalWrite(disp_digits[digit], LOW);
+        }
+
+        digitalWrite(disp_segs[seg], HIGH);
+    }
+}
+
 ISR(TIMER1_OVF_vect) {
-    _timerFired = true;
+    writeDigits(_clock_digits);
+
+    _timer1_fire_counter++;
+    if (_timer1_fire_counter >= _timer1_fire_counter_max) {
+        _timer1_fire_counter = 0;
+        _timerFired = true;
+    }
 }

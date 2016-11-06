@@ -1,0 +1,47 @@
+Pins and connections:
+
+
+A0: 7SD 10 (digit 2)
+A1: 7SD 7 (digit 1)
+A2: 7SD 11 (digit 3)
+A3: 7SD 1 (digit 4)
+A4: RTC SDA
+A5: RTC SCL
+A7: Squelch button
+A6: Set, move down (to past)
+
+D2: 7SD 8 (top)
+D3: 7SD 9 (upper-left)
+D4: 7SD 12 (upper-right)
+D5: Set, move up (to future)
+D6: 7SD 2 (middle)
+D7: 7SD 3 (lower-right)
+D8: 7SD 4 (dot)
+D9: 7SD 5 (bottom)
+D10: 7SD 6 (lower-left)
+D11: PWM LED MOSFETs
+D12: Enable "set alarm" (otherwise "set clock")
+D13: Alarm on/off
+
+
+
+
+Digits display, numbered clockwise from bottom-right
+
+Digit x => 5V on pin y
+
+Digit 1: Pin 7  (A1)
+Digit 2: Pin 10 (A0)
+Digit 3: Pin 11 (A2)
+Digit 4: Pin 1  (A3)
+
+GND at:
+
+2 M   (D6)
+3 BR  (D7)
+4 dot (D8)
+5 B   (D9)
+6 BL  (D10)
+8 T   (D2)
+9 TL  (D3)
+12 TR (D4)
