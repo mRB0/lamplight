@@ -194,6 +194,9 @@ const uint8_t segs_9 = 0b11111010;
 
 const uint8_t segs[] = { segs_0, segs_1, segs_2, segs_3, segs_4, segs_5, segs_6, segs_7, segs_8, segs_9 };
 
+const uint8_t squelch_button_pin = A7;
+const uint8_t alarm_onoff_toggle_pin = 13;
+
 void setup () {
 #ifdef DO_SERIAL_LOGGING
     Serial.begin(57600);
@@ -206,8 +209,8 @@ void setup () {
     WAKE_UP_TIME_SECONDS = secondsSinceMidnight(toLocalTime(RTC.now())) + 5;
 #endif
     
-    pinMode(2, INPUT_PULLUP); // button
-    pinMode(3, INPUT_PULLUP); // enable/disable toggle (forces squelch when low)
+    // disabled: analog-only pin // pinMode(squelch_button_pin, INPUT_PULLUP); // squelch button
+    pinMode(alarm_onoff_toggle_pin, INPUT_PULLUP); // enable/disable toggle (forces squelch when low)
 
     TCCR1A = 0x01;
     TCCR1B = 0x03;
@@ -334,8 +337,63 @@ static bool anything_fired(void) {
     return _timerFired;
 }
 
+static int analogReadAsDigital(uint8_t pin) {
+    return analogRead(pin) > 80;
+}
+
+class DebouncedButton {
+public:
+    DebouncedButton(uint8_t _pin) : pin(_pin), readFunction(digitalRead) { }
+    DebouncedButton(uint8_t _pin, int (*_readFunction)(uint8_t)) : pin(_pin), readFunction(_readFunction) { }
+
+    // -1 = went low, 0 = did not change, +1 = went high
+    int8_t didChange() {
+        uint8_t value = readFunction(this->pin);
+
+        if (!value && state <= -state_threshold) {
+            return 0;
+        }
+        
+        if (value && state >= state_threshold) {
+            return 0;
+        }
+        
+        if (!value) {
+            if (state > 0) {
+                state = 0;
+            }
+            state--;
+            if (state == -state_threshold) {
+                return -1;
+            }
+        }
+        else if (value) {
+            if (state < 0) {
+                state = 0;
+            }
+            state++;
+            if (state == state_threshold) {
+                return 1;
+            }
+        }
+        
+        return 0;
+    }
+    
+private:
+    uint8_t pin;
+    int (*readFunction)(uint8_t);
+    int8_t state = 0;
+    const int8_t state_threshold = 3;
+};
+
+
 void loop () {
     static uint8_t actionCounter = 0;
+
+    analogReadAsDigital(squelch_button_pin);
+    
+    DebouncedButton squelchButton(squelch_button_pin, analogReadAsDigital);
     
     for(;;) {
         // Watch for interrupts, and sleep if nothing has fired.
@@ -365,23 +423,15 @@ void loop () {
                 
             }
             actionCounter = (actionCounter + 1) % 16;
-            
-            // if (buttonPressCounter != 0) {
-            //     // debounce
-            //     buttonPressCounter = (buttonPressCounter + 1) % 3;
-            //     if (buttonPressCounter == 0) {
-            //         uint8_t buttonState = digitalRead(2);
 
-            //         if (buttonState == 0) {
-            //             if (!squelched) {
-            //                 squelched = true;
-            //             } else {
-            //                 userLightOn = !userLightOn;
-            //             }
-            //             updateBrightness();
-            //         }
-            //     }
-            // }
+            if (squelchButton.didChange() == -1) {
+                if (!squelched) {
+                    squelched = true;
+                } else {
+                    userLightOn = !userLightOn;
+                }
+                updateBrightness();
+            }
         }
     }
 }
@@ -412,8 +462,6 @@ void writeDigits(volatile uint8_t *digits) {
             }
         }
         
-        //delay(1);
-
         for(uint8_t digit = 0; digit < 4; digit++) {
             digitalWrite(disp_digits[digit], LOW);
         }
